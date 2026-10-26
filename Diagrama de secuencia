@@ -1,0 +1,69 @@
+@startuml
+title Diagrama de Secuencia - Proceso principal de pago (CU-01 a CU-04)
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam defaultFontName Arial
+
+actor Cliente
+participant ":TiendaOnline" as Tienda
+participant ":PasarelaPagos" as Pasarela
+participant ":ValidadorPago" as Validador
+participant ":Transaccion" as Trx
+participant ":ServicioFinanciero" as Banco
+
+== CU-01: Iniciar proceso de pago ==
+Cliente -> Tienda : seleccionarPagar()
+Tienda -> Pasarela : iniciarPago(datosCompra)
+activate Pasarela
+Pasarela -> Trx : crearTransaccion()
+activate Trx
+Trx --> Pasarela : idTransaccion (estado = PENDIENTE)
+deactivate Trx
+Pasarela --> Cliente : mostrarFormulario()
+
+== CU-02: Ingresar y validar método de pago ==
+loop hasta que los datos sean válidos
+    Cliente -> Pasarela : ingresarDatosPago(datos)
+    Pasarela -> Validador : validarDatos(datos)
+    activate Validador
+    Validador --> Pasarela : resultadoValidacion
+    deactivate Validador
+    alt datos inválidos
+        Pasarela --> Cliente : mostrarError()
+    else datos válidos
+        Pasarela -> Pasarela : confirmarDatosValidos()
+    end
+end
+
+== CU-03: Procesar transacción con entidad financiera ==
+Pasarela -> Trx : existeDuplicado(idTransaccion)
+activate Trx
+Trx --> Pasarela : esDuplicado
+deactivate Trx
+
+alt transacción duplicada
+    Pasarela -> Pasarela : descartarSolicitud()
+else transacción no duplicada
+    Pasarela -> Banco : procesarPago(idTransaccion, datos)
+    activate Banco
+    Banco --> Pasarela : respuesta
+    deactivate Banco
+
+    alt pago aprobado
+        Pasarela -> Trx : actualizarEstado(APROBADO)
+        Pasarela -> Tienda : sincronizarEstado(idTransaccion, APROBADO)
+        == CU-04: Notificar resultado al cliente ==
+        Pasarela --> Cliente : mostrarPagoAprobado(idTransaccion)
+    else pago rechazado
+        Pasarela -> Trx : actualizarEstado(RECHAZADO)
+        Pasarela -> Tienda : sincronizarEstado(idTransaccion, RECHAZADO)
+        == CU-04: Notificar resultado al cliente ==
+        Pasarela --> Cliente : mostrarPagoRechazado(motivo)
+    end
+end
+
+Pasarela --> Cliente : redirigirATienda()
+deactivate Pasarela
+
+@enduml
